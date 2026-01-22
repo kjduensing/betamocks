@@ -13,7 +13,7 @@ module Betamocks
       service = service_by_host_port(env)
       return nil unless service
       # TODO raise if service.size > 1 ?
-      
+
       endpoints = service[:endpoints].select { |e| matches_path(e, env.method, env.url.path) }
       return nil unless endpoints
       return endpoints.first if endpoints.size == 1
@@ -23,20 +23,7 @@ module Betamocks
       return nil unless endpoints
       return endpoints.first if endpoints.size == 1
 
-      byebug
-      close_matches = closest_matches(service[:endpoints], env)
-
-      close_matches_strs = close_matches.map do |m|
-        "    \033[34m#{m[:method].upcase} #{m[:path]}\033[0m"
-      end
-
-      no_match_msg = "\n\n\033[31mBetamocks Error: Unable to uniquely identify request!\033[0m"
-      no_match_msg += "\n  \033[33mRequest: #{env.method.upcase} #{env.url.to_s}\033[0m"
-      no_match_msg += "\n\n  Closest matches: \n#{close_matches_strs.join("\n")}"
-      no_match_msg += "\n\nIf you expected a match and you see an exact match on method and path in the list above"
-      no_match_msg += ", check the parameters of the request against the parameters defined in services_config.yml.\n"
-
-      raise ArgumentError, no_match_msg
+      raise_no_unique_match(service[:endpoints], env)
     end
 
     def config
@@ -116,12 +103,13 @@ module Betamocks
       end
     end
 
-    def get_path_distance(endpoint, env)
-      # Match on path first
-      DidYouMean::Levenshtein.distance(env.path, endpoint[:path])
-    end
-
-    def closest_matches(endpoints, request)
+    # Note that the "closest" matches really mean the closEST.
+    # For a single mocked endpoint, regardless of what it is, it will be the closEST
+    # If there are more than 1 mocked endpoints, but they're really different, some of them will be
+    #  the closEST.
+    # It should be fine as this is not used for automation, but for error messaging. Thank goodness for
+    #  human brains.
+    def find_closest_matches(endpoints, request)
       paths_w_distance = endpoints.reduce([]) do |acc, endpoint|
         method_distance = DidYouMean::Levenshtein.distance(request.method.to_s, endpoint[:method].to_s)
         path_distance = DidYouMean::Levenshtein.distance(request.url.path, endpoint[:path])
@@ -136,6 +124,24 @@ module Betamocks
 
       # Filter the list down to the most similar options
       lowest_three.select { |p| p[:distance] - lowest_three[0][:distance] <= DISTANCE_CUTOFF }
+    end
+
+    def raise_no_unique_match(endpoints, request)
+      close_matches = find_closest_matches(endpoints, request)
+      close_matches_strs = close_matches.map do |m|
+        "    \033[34m#{m[:method].upcase} #{m[:path]}\033[0m"
+      end
+
+      # If any are mocked, there should always be at least one "close" match
+      close_matches_strs = 'No endpoints mocked' if close_matches.length == 0
+
+      no_match_msg = "\n\n\033[31mBetamocks Error: Unable to uniquely identify request!\033[0m"
+      no_match_msg += "\n  \033[33mRequest: #{request.method.upcase} #{request.url.to_s}\033[0m"
+      no_match_msg += "\n\n  Closest matches: \n#{close_matches_strs.join("\n")}"
+      no_match_msg += "\n\nIf you expected a match and you see an exact match on method and path in the list above"
+      no_match_msg += ", check the parameters of the request against the parameters defined in services_config.yml.\n"
+
+      raise ArgumentError, no_match_msg
     end
   end
 end

@@ -128,6 +128,23 @@ RSpec.describe Betamocks::Configuration do
           expect(endpoint).to eq(method: :get, path: "/get_animals(class='reptilia',pagination=true)", file_path: '/pics/reptiles')
         end
       end 
+      
+      context 'when it cannot uniquely identify the request' do
+        context 'when there are no service endpoints defined' do
+          let(:env) { double('Faraday::Env') }
+          let(:url) { URI('http://foo.com/bar.json') }
+
+          it 'raises an error' do
+            expect do
+              Betamocks.configuration.find_endpoint(env)
+            end.to raise_error(ArgumentError, /no endpoints mocked/i)
+          end
+        end
+
+        context 'when there is a single service endpoint defined'
+        context 'when there are multiple similar service endpoints defined'
+        context 'when there are multiple unique service endpoints defined'
+      end
     end
   end
 
